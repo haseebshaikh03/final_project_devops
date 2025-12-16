@@ -1,102 +1,198 @@
 ---
-# Grafana ConfigMap for datasources
+# ============================================
+# GRAFANA DATASOURCE CONFIGURATION
+# ============================================
+# ConfigMap: Stores Grafana datasource configuration
+# Auto-configures Prometheus as datasource when Grafana starts
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # name: Referenced by Grafana Deployment below
   name: grafana-datasources
+  
+  # labels: For organizing resources
   labels:
     app: grafana
+    
+# data: Configuration files stored in this ConfigMap
 data:
+  # prometheus.yaml: Grafana datasource provisioning file
+  # Grafana automatically loads files from /etc/grafana/provisioning/datasources/
   prometheus.yaml: |
+    # apiVersion: Grafana provisioning API version
     apiVersion: 1
+    
+    # datasources: List of datasources to configure
     datasources:
+      # name: Display name in Grafana UI
       - name: Prometheus
+        
+        # type: Type of datasource (prometheus, mysql, postgres, etc.)
         type: prometheus
+        
+        # access: How Grafana accesses the datasource
+        # proxy: Grafana server proxies requests (hides datasource from browser)
+        # direct: Browser directly accesses datasource (requires CORS)
         access: proxy
+        
+        # url: URL where datasource is accessible
+        # Uses Kubernetes internal DNS: <service>.<namespace>.svc.cluster.local:<port>
         url: http://prometheus-service.monitoring.svc.cluster.local:9090
+        
+        # isDefault: Whether this is the default datasource
+        # true: Auto-selected when creating new dashboards
         isDefault: true
+        
+        # editable: Whether users can edit this datasource in UI
         editable: true
 
 ---
-# Grafana Deployment
+# ============================================
+# GRAFANA DEPLOYMENT
+# ============================================
+# Deployment: Manages Grafana pod(s) for visualization
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana-deployment
   labels:
     app: grafana
+    
+# spec: Deployment specification
 spec:
+  # replicas: Number of Grafana instances
+  # 1 is typical (Grafana is stateless, can scale if needed)
   replicas: 1
+  
+  # selector: Identifies which pods this Deployment manages
   selector:
     matchLabels:
       app: grafana
+  
+  # template: Pod template
   template:
+    # metadata: Pod labels
     metadata:
       labels:
         app: grafana
+    
+    # spec: Pod specification
     spec:
+      # containers: List of containers in pod
       containers:
+        # name: Container name
         - name: grafana
+          
+          # image: Grafana Docker image
+          # 10.2.2: Specific version for consistency
           image: grafana/grafana:10.2.2
+          
+          # ports: Ports exposed by container
           ports:
-            - name: http
-              containerPort: 3000
+            - name: http           # Port name
+              containerPort: 3000  # Grafana web UI port
               protocol: TCP
+          
+          # env: Environment variables for container
           env:
+            # GF_SECURITY_ADMIN_USER: Default admin username
             - name: GF_SECURITY_ADMIN_USER
               value: "admin"
+            
+            # GF_SECURITY_ADMIN_PASSWORD: Default admin password
+            # WARNING: Change this in production! Use Secrets instead.
             - name: GF_SECURITY_ADMIN_PASSWORD
               value: "admin"
+            
+            # GF_INSTALL_PLUGINS: Comma-separated list of plugins to install
+            # Empty = no additional plugins (can add like "grafana-clock-panel")
             - name: GF_INSTALL_PLUGINS
               value: ""
+            
+            # GF_SERVER_ROOT_URL: Public URL where Grafana is accessible
+            # Used for redirect URLs and external links
             - name: GF_SERVER_ROOT_URL
               value: "http://localhost:30300"
+          
+          # volumeMounts: Volumes mounted into container
           volumeMounts:
+            # grafana-storage: Stores dashboards, users, settings
             - name: grafana-storage
-              mountPath: /var/lib/grafana
+              mountPath: /var/lib/grafana  # Grafana data directory
+            
+            # grafana-datasources: Datasource configuration
             - name: grafana-datasources
+              # Grafana auto-loads files from this directory on startup
               mountPath: /etc/grafana/provisioning/datasources
+          
+          # resources: CPU and memory limits
           resources:
+            # requests: Minimum guaranteed resources
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 100m      # 0.1 CPU cores
+              memory: 128Mi  # 128 megabytes
+            
+            # limits: Maximum allowed resources
             limits:
-              cpu: 200m
-              memory: 256Mi
+              cpu: 200m      # 0.2 CPU cores
+              memory: 256Mi  # 256 megabytes
+          
+          # livenessProbe: Checks if container is alive (restarts if fails)
           livenessProbe:
+            # httpGet: HTTP health check
             httpGet:
-              path: /api/health
+              path: /api/health      # Grafana health endpoint
               port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            initialDelaySeconds: 30  # Wait 30s after start before checking
+            periodSeconds: 10        # Check every 10 seconds
+          
+          # readinessProbe: Checks if container ready to accept traffic
           readinessProbe:
             httpGet:
               path: /api/health
               port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 5
+            initialDelaySeconds: 10  # Start checking after 10s
+            periodSeconds: 5         # Check every 5 seconds
+      
+      # volumes: Storage volumes available to containers
       volumes:
+        # grafana-storage: Stores Grafana data
         - name: grafana-storage
+          # emptyDir: Temporary storage (data lost when pod deleted)
+          # For production, use persistentVolumeClaim
           emptyDir: {}
+        
+        # grafana-datasources: Datasource configuration from ConfigMap
         - name: grafana-datasources
           configMap:
-            name: grafana-datasources
+            name: grafana-datasources  # References ConfigMap above
 
 ---
-# Grafana Service
+# ============================================
+# GRAFANA SERVICE
+# ============================================
+# Service: Provides stable network endpoint for accessing Grafana
 apiVersion: v1
 kind: Service
 metadata:
   name: grafana-service
   labels:
     app: grafana
+    
+# spec: Service specification
 spec:
+  # type: How Service is exposed
+  # NodePort: Accessible from outside cluster via <NodeIP>:<NodePort>
   type: NodePort
+  
+  # selector: Routes traffic to pods with these labels
   selector:
     app: grafana
+  
+  # ports: Ports exposed by Service
   ports:
-    - name: http
-      port: 3000
-      targetPort: 3000
-      nodePort: 30300
-      protocol: TCP
+    - name: http         # Port name
+      port: 3000         # Service port (internal cluster access)
+      targetPort: 3000   # Container port (where Grafana listens)
+      nodePort: 30300    # External port on nodes (30000-32767 range)
+      protocol: TCP      # Network protocol

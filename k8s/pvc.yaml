@@ -1,14 +1,43 @@
+# apiVersion: Kubernetes API version for PersistentVolumeClaim
+# v1: Core API version (stable)
 apiVersion: v1
+
+# kind: Type of Kubernetes resource
+# PersistentVolumeClaim: Request for storage that can be mounted in pods
+# Abstracts details of how storage is provided (local disk, NFS, cloud storage, etc.)
 kind: PersistentVolumeClaim
+
+# metadata: Information to uniquely identify this PVC
 metadata:
+  # name: Unique name for this PVC (referenced in deployment.yaml volumeMounts)
   name: sample-webapp-pvc
+  
+  # labels: Key-value pairs for organizing resources
   labels:
-    app: sample-webapp
+    app: sample-webapp    # Links this PVC to the sample-webapp application
+
+# spec: Specification of the desired storage characteristics
 spec:
+  # accessModes: How the volume can be mounted
+  # Options:
+  #   - ReadWriteOnce (RWO): Volume can be mounted read-write by a single node
+  #   - ReadOnlyMany (ROX): Volume can be mounted read-only by many nodes
+  #   - ReadWriteMany (RWX): Volume can be mounted read-write by many nodes
   accessModes:
+    # ReadWriteOnce: Only one node can mount this volume at a time
+    # Suitable for database files (SQLite) that don't support concurrent writes
     - ReadWriteOnce
+  
+  # resources: Storage resource requirements
   resources:
+    # requests: Amount of storage requested
     requests:
+      # storage: Size of the volume
+      # 1Gi = 1 Gibibyte (1024 MiB) - enough for SQLite database
       storage: 1Gi
-  # For cloud providers, specify storageClassName
+  
+  # storageClassName: (Optional) Type of storage to use
+  # If not specified, uses default StorageClass of the cluster
+  # Cloud examples: gp2 (AWS), standard (GKE), managed-premium (Azure)
+  # Minikube example: standard (hostPath provisioner)
   # storageClassName: standard

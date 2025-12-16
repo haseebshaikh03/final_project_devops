@@ -1,74 +1,150 @@
+# apiVersion: Specifies the Kubernetes API version for this resource
+# apps/v1: Stable API version for Deployments (introduced in Kubernetes 1.9)
 apiVersion: apps/v1
+
+# kind: The type of Kubernetes resource we're creating
+# Deployment: Manages a replicated application (ensures desired number of pods are running)
 kind: Deployment
+
+# metadata: Data that helps uniquely identify the object
 metadata:
+  # name: Unique name for this Deployment within the namespace
   name: sample-webapp-deployment
+  
+  # labels: Key-value pairs for organizing and selecting resources
   labels:
-    app: sample-webapp
-    tier: frontend
-    version: v1
+    app: sample-webapp      # Application name (used for grouping)
+    tier: frontend          # Application tier (frontend/backend/database)
+    version: v1             # Version label for tracking deployments
+
+# spec: Specification of the desired behavior of the Deployment
 spec:
+  # replicas: Number of pod instances to run (for high availability)
+  # 2 replicas ensures the app stays up if one pod fails
   replicas: 2
+  
+  # selector: Defines how the Deployment finds which Pods to manage
   selector:
+    # matchLabels: Pods must have ALL these labels to be managed by this Deployment
     matchLabels:
-      app: sample-webapp
+      app: sample-webapp    # Must match the pod template labels below
+  
+  # strategy: Defines how pods are replaced during updates
   strategy:
+    # type: RollingUpdate means update pods gradually (no downtime)
     type: RollingUpdate
     rollingUpdate:
+      # maxSurge: Maximum number of pods created above desired count during update
+      # 1 = can have 3 pods temporarily (2 desired + 1 surge) during update
       maxSurge: 1
+      # maxUnavailable: Maximum pods that can be unavailable during update
+      # 0 = ensures at least 2 pods always running (zero downtime)
       maxUnavailable: 0
+  
+  # template: Template for creating pods (blueprint for pod specification)
   template:
+    # metadata: Metadata for pods created from this template
     metadata:
+      # labels: Labels applied to each pod (must match selector above)
       labels:
         app: sample-webapp
         tier: frontend
         version: v1
+      
+      # annotations: Non-identifying metadata (used by tools like Prometheus)
       annotations:
+        # prometheus.io/scrape: Tells Prometheus to scrape metrics from this pod
         prometheus.io/scrape: "true"
+        # prometheus.io/port: Port where metrics are exposed
         prometheus.io/port: "3000"
+        # prometheus.io/path: URL path for metrics endpoint
         prometheus.io/path: "/metrics"
+    
+    # spec: Specification of pods to create
     spec:
+      # containers: List of containers in the pod (usually one per pod)
       containers:
+        # name: Name of the container within the pod
         - name: sample-webapp
+          
+          # image: Docker image to use (from DockerHub)
+          # Format: username/repository:tag
           image: haseeb2112003/sample-webapp:latest
+          
+          # imagePullPolicy: When to pull the image
+          # Always: Pull image every time pod starts (ensures latest version)
           imagePullPolicy: Always
+          
+          # ports: List of ports to expose from the container
           ports:
-            - name: http
-              containerPort: 3000
-              protocol: TCP
+            - name: http              # Name for this port (used in services)
+              containerPort: 3000     # Port the container listens on
+              protocol: TCP           # Protocol (TCP or UDP)
+          
+          # env: Environment variables to set in the container
           env:
+            # NODE_ENV: Tells Node.js to run in production mode
             - name: NODE_ENV
               value: "production"
+            
+            # PORT: Port the application should listen on
             - name: PORT
               value: "3000"
+            
+            # DB_PATH: Path to SQLite database file
             - name: DB_PATH
               value: "/usr/src/app/data/tasks.db"
+          
+          # volumeMounts: Mounts storage volumes into the container
           volumeMounts:
+            # name: References volume defined below
             - name: app-storage
+              # mountPath: Where to mount the volume inside container
+              # This directory will persist data even if pod restarts
               mountPath: /usr/src/app/data
+          
+          # resources: CPU and memory resource requirements
           resources:
+            # requests: Minimum resources guaranteed to the container
+            # Scheduler uses this to decide which node to place pod on
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "128Mi"   # Minimum memory (128 megabytes)
+              cpu: "100m"       # Minimum CPU (0.1 CPU core)
+            
+            # limits: Maximum resources container can use
+            # Container will be throttled (CPU) or killed (memory) if exceeded
             limits:
-              memory: "256Mi"
-              cpu: "200m"
+              memory: "256Mi"   # Maximum memory (256 megabytes)
+              cpu: "200m"       # Maximum CPU (0.2 CPU core)
+          
+          # livenessProbe: Checks if container is alive (restarts if fails)
+          # Used to detect deadlocks or frozen applications
           livenessProbe:
+            # httpGet: Performs HTTP GET request to check health
             httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+              path: /health         # Health check endpoint
+              port: 3000           # Port to check
+            initialDelaySeconds: 30 # Wait 30s after start before first check
+            periodSeconds: 10       # Check every 10 seconds
+            timeoutSeconds: 3       # Wait max 3s for response
+            failureThreshold: 3     # Restart after 3 consecutive failures
+          
+          # readinessProbe: Checks if container is ready to accept traffic
+          # Pod won't receive traffic until this passes
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health         # Same health endpoint
               port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
+            initialDelaySeconds: 10 # Start checking after 10s
+            periodSeconds: 5        # Check every 5 seconds
+            timeoutSeconds: 3       # Wait max 3s for response
+            failureThreshold: 3     # Mark not ready after 3 failures
+      
+      # volumes: List of volumes that can be mounted by containers
       volumes:
+        # name: Name referenced by volumeMounts above
         - name: app-storage
+          # persistentVolumeClaim: Uses a PVC for storage
           persistentVolumeClaim:
+            # claimName: Name of the PVC to use (defined in pvc.yaml)
             claimName: sample-webapp-pvc

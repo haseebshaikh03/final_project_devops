@@ -1,18 +1,56 @@
+# apiVersion: Kubernetes API version for Service resources
+# v1: Core API version for Services (stable since Kubernetes 1.0)
 apiVersion: v1
+
+# kind: Type of Kubernetes resource
+# Service: Provides a stable endpoint to access pods (load balancing)
 kind: Service
+
+# metadata: Information to uniquely identify this Service
 metadata:
+  # name: Unique name for this Service (used by other resources to reference it)
   name: sample-webapp-service
+  
+  # labels: Key-value pairs for organizing resources
   labels:
-    app: sample-webapp
-    tier: frontend
+    app: sample-webapp    # Application name
+    tier: frontend        # Application tier
+
+# spec: Desired behavior of the Service
 spec:
+  # type: Defines how the Service is exposed
+  # NodePort: Exposes Service on each Node's IP at a static port
+  # Makes the app accessible from outside the cluster via <NodeIP>:<NodePort>
+  # Other types: ClusterIP (internal only), LoadBalancer (cloud LB), ExternalName
   type: NodePort
+  
+  # selector: Determines which pods receive traffic from this Service
+  # Service routes traffic to pods with ALL these labels
   selector:
-    app: sample-webapp
+    app: sample-webapp    # Matches pods with label app=sample-webapp
+  
+  # ports: List of ports exposed by this Service
   ports:
+    # name: Name for this port (useful when multiple ports exist)
     - name: http
+      
+      # protocol: Network protocol (TCP or UDP)
       protocol: TCP
-      port: 80            # Service port
-      targetPort: 3000    # Container port
-      nodePort: 30080     # External NodePort (30000-32767 range)
+      
+      # port: Port on which the Service is accessible within the cluster
+      # Other pods/services can access this via sample-webapp-service:80
+      port: 80
+      
+      # targetPort: Port on the pod where traffic should be sent
+      # Must match the containerPort in deployment.yaml (3000)
+      targetPort: 3000
+      
+      # nodePort: Port on each cluster node where Service is accessible externally
+      # Must be in range 30000-32767
+      # App accessible via http://<any-node-ip>:30080 from outside cluster
+      nodePort: 30080
+  
+  # sessionAffinity: Whether to route traffic from same client to same pod
+  # None: No session affinity (requests distributed across all pods)
+  # ClientIP: Routes requests from same client IP to same pod (sticky sessions)
   sessionAffinity: None

@@ -1,163 +1,297 @@
 ---
-# Prometheus ConfigMap with scrape configuration
+# ============================================
+# PROMETHEUS CONFIGURATION MAP
+# ============================================
+# ConfigMap: Stores configuration data as key-value pairs
+# Prometheus uses this to know what targets to scrape for metrics
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # name: Unique name for this ConfigMap (referenced by Deployment below)
   name: prometheus-config
+  
+  # labels: For organizing and selecting resources
   labels:
     app: prometheus
+    
+# data: Actual configuration data stored in this ConfigMap
 data:
+  # prometheus.yml: Main Prometheus configuration file
+  # The | symbol means multi-line string follows
   prometheus.yml: |
+    # global: Default settings applied to all scrape configs
     global:
+      # scrape_interval: How often to scrape targets for metrics (default)
+      # 15s = scrape every 15 seconds
       scrape_interval: 15s
+      
+      # evaluation_interval: How often to evaluate recording and alerting rules
       evaluation_interval: 15s
+      
+      # external_labels: Labels added to all metrics before storing/forwarding
+      # Useful for identifying metrics source in federated setups
       external_labels:
-        cluster: 'devops-lab'
-        environment: 'production'
+        cluster: 'devops-lab'      # Identifies which cluster these metrics are from
+        environment: 'production'  # Identifies environment (prod/dev/staging)
 
+    # scrape_configs: List of targets Prometheus should scrape for metrics
     scrape_configs:
-      # Scrape Prometheus itself
+      # Job 1: Scrape Prometheus itself (self-monitoring)
       - job_name: 'prometheus'
+        # static_configs: Manually specified targets (not dynamically discovered)
         static_configs:
-          - targets: ['localhost:9090']
+          # targets: List of endpoints to scrape (host:port format)
+          - targets: ['localhost:9090']  # Prometheus scrapes its own metrics
 
-      # Scrape the sample web application
+      # Job 2: Scrape the sample web application
       - job_name: 'sample-webapp'
-        scrape_interval: 10s
-        static_configs:
-          - targets: ['sample-webapp-service.default.svc.cluster.local:80']
-        metrics_path: '/metrics'
+        # scrape_interval: Override global interval for this job
+        scrape_interval: 10s  # Scrape app every 10 seconds (more frequent)
         
-      # Kubernetes API server metrics
+        static_configs:
+          # targets: Service DNS name within Kubernetes cluster
+          # Format: <service-name>.<namespace>.svc.cluster.local:<port>
+          - targets: ['sample-webapp-service.default.svc.cluster.local:80']
+        
+        # metrics_path: URL path where metrics are exposed
+        metrics_path: '/metrics'  # App exposes Prometheus metrics at /metrics
+        
+      # Job 3: Scrape Kubernetes API server metrics
       - job_name: 'kubernetes-apiservers'
+        # kubernetes_sd_configs: Dynamically discover targets using Kubernetes API
         kubernetes_sd_configs:
-          - role: endpoints
-        scheme: https
+          # role: Type of Kubernetes objects to discover
+          - role: endpoints  # Discover service endpoints
+        
+        # scheme: Protocol to use (http or https)
+        scheme: https  # API server uses HTTPS
+        
+        # tls_config: TLS/SSL configuration for HTTPS connections
         tls_config:
+          # ca_file: Certificate Authority file to verify server certificate
+          # Kubernetes automatically mounts this in every pod
           ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        
+        # bearer_token_file: Authentication token for API server
+        # Service account token automatically mounted in pod
         bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        
+        # relabel_configs: Modify discovered targets before scraping
         relabel_configs:
+          # source_labels: Labels to examine from service discovery
           - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
-            action: keep
+            # action: What to do with targets
+            action: keep  # Only keep targets matching the regex
+            # regex: Only scrape kubernetes service in default namespace on https port
             regex: default;kubernetes;https
 
-      # Kubernetes nodes metrics
+      # Job 4: Scrape Kubernetes node metrics
       - job_name: 'kubernetes-nodes'
         kubernetes_sd_configs:
+          # role: node discovers all Kubernetes nodes
           - role: node
+        
         scheme: https
         tls_config:
           ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
         bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
 ---
-# Prometheus Deployment
+# ============================================
+# PROMETHEUS DEPLOYMENT
+# ============================================
+# Deployment: Manages Prometheus pod(s) and ensures it stays running
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prometheus-deployment
   labels:
     app: prometheus
+    
+# spec: Specification of desired Deployment behavior
 spec:
+  # replicas: Number of Prometheus instances to run
+  # 1 is sufficient for lab/dev (production would use 2+ for HA)
   replicas: 1
+  
+  # selector: Identifies which pods this Deployment manages
   selector:
     matchLabels:
       app: prometheus
+      
+  # template: Blueprint for creating Prometheus pods
   template:
+    # metadata: Labels and annotations for the pods
     metadata:
       labels:
         app: prometheus
+        
+    # spec: Specification of pod contents
     spec:
+      # serviceAccountName: Service account used by this pod
+      # Gives Prometheus permissions to query Kubernetes API
       serviceAccountName: prometheus
+      
+      # containers: List of containers in the pod
       containers:
+        # name: Container name within the pod
         - name: prometheus
+          
+          # image: Prometheus Docker image from Docker Hub
+          # v2.48.0: Specific version (pinned for reproducibility)
           image: prom/prometheus:v2.48.0
+          
+          # args: Command-line arguments passed to Prometheus
           args:
+            # --config.file: Path to Prometheus configuration file
             - '--config.file=/etc/prometheus/prometheus.yml'
+            
+            # --storage.tsdb.path: Where to store time-series database
             - '--storage.tsdb.path=/prometheus'
+            
+            # --web.console.libraries: Path to console library files
             - '--web.console.libraries=/etc/prometheus/console_libraries'
+            
+            # --web.console.templates: Path to console template files
             - '--web.console.templates=/etc/prometheus/consoles'
+            
+            # --web.enable-lifecycle: Enable reload config via HTTP POST
+            # Allows reloading config without restart: curl -X POST http://localhost:9090/-/reload
             - '--web.enable-lifecycle'
+          
+          # ports: Ports exposed by this container
           ports:
-            - name: web
-              containerPort: 9090
+            - name: web            # Name for this port
+              containerPort: 9090  # Prometheus web UI and API port
+          
+          # volumeMounts: Volumes to mount into this container
           volumeMounts:
+            # Mount ConfigMap containing prometheus.yml
             - name: config-volume
-              mountPath: /etc/prometheus
+              mountPath: /etc/prometheus  # Prometheus reads config from here
+            
+            # Mount storage for time-series data
             - name: storage-volume
-              mountPath: /prometheus
+              mountPath: /prometheus  # TSDB data stored here
+          
+          # resources: CPU and memory resource limits
           resources:
+            # requests: Minimum guaranteed resources
             requests:
-              cpu: 200m
-              memory: 256Mi
+              cpu: 200m      # 0.2 CPU cores minimum
+              memory: 256Mi  # 256 megabytes minimum
+            
+            # limits: Maximum resources allowed
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 500m      # 0.5 CPU cores maximum
+              memory: 512Mi  # 512 megabytes maximum
+      
+      # volumes: Storage volumes available to containers
       volumes:
+        # config-volume: Contains Prometheus configuration
         - name: config-volume
+          # configMap: Load data from ConfigMap defined above
           configMap:
-            name: prometheus-config
+            name: prometheus-config  # References the ConfigMap created earlier
+        
+        # storage-volume: Stores Prometheus time-series data
         - name: storage-volume
+          # emptyDir: Temporary storage (data lost if pod deleted)
+          # For production, use persistentVolumeClaim instead
           emptyDir: {}
 
 ---
-# Prometheus Service
+# ============================================
+# PROMETHEUS SERVICE
+# ============================================
+# Service: Provides stable network endpoint to access Prometheus
 apiVersion: v1
 kind: Service
 metadata:
   name: prometheus-service
   labels:
     app: prometheus
+    
+# spec: Service specification
 spec:
+  # type: How the Service is exposed
+  # NodePort: Accessible from outside cluster via <NodeIP>:<NodePort>
   type: NodePort
+  
+  # selector: Routes traffic to pods with these labels
   selector:
     app: prometheus
+  
+  # ports: Ports exposed by this Service
   ports:
-    - name: web
-      port: 9090
-      targetPort: 9090
-      nodePort: 30090
-      protocol: TCP
+    - name: web            # Port name
+      port: 9090           # Service port (internal cluster access)
+      targetPort: 9090     # Container port (where Prometheus listens)
+      nodePort: 30090      # External port on cluster nodes (30000-32767 range)
+      protocol: TCP        # Network protocol
 
 ---
-# ServiceAccount for Prometheus
+# ============================================
+# PROMETHEUS SERVICE ACCOUNT
+# ============================================
+# ServiceAccount: Identity for Prometheus pods to authenticate with Kubernetes API
+# Allows Prometheus to discover and scrape Kubernetes resources
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: prometheus
 
 ---
-# ClusterRole for Prometheus
+# ============================================
+# PROMETHEUS CLUSTER ROLE
+# ============================================
+# ClusterRole: Defines permissions across entire cluster (not namespaced)
+# Specifies what Prometheus can read from Kubernetes API
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: prometheus
+  
+# rules: List of permissions granted by this role
 rules:
-  - apiGroups: [""]
+  # Rule 1: Permission to read core API resources
+  - apiGroups: [""]  # Empty string = core API group
+    # resources: Which Kubernetes resources can be accessed
     resources:
-      - nodes
-      - nodes/proxy
-      - services
-      - endpoints
-      - pods
-    verbs: ["get", "list", "watch"]
+      - nodes           # Read node information
+      - nodes/proxy     # Proxy requests to nodes
+      - services        # Read services (for service discovery)
+      - endpoints       # Read endpoints (for target discovery)
+      - pods            # Read pod information
+    # verbs: What actions can be performed
+    verbs: ["get", "list", "watch"]  # Read-only access
+  
+  # Rule 2: Permission to read extensions API resources
   - apiGroups:
-      - extensions
+      - extensions  # Extensions API group
     resources:
-      - ingresses
+      - ingresses   # Read ingress resources
     verbs: ["get", "list", "watch"]
 
 ---
-# ClusterRoleBinding for Prometheus
+# ============================================
+# PROMETHEUS CLUSTER ROLE BINDING
+# ============================================
+# ClusterRoleBinding: Grants ClusterRole permissions to a ServiceAccount
+# Links prometheus ServiceAccount with prometheus ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: prometheus
+  
+# roleRef: Which ClusterRole to grant
 roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: prometheus
+  apiGroup: rbac.authorization.k8s.io  # RBAC API group
+  kind: ClusterRole                     # Type of role
+  name: prometheus                      # Name of ClusterRole created above
+
+# subjects: Who gets these permissions
 subjects:
-  - kind: ServiceAccount
-    name: prometheus
-    namespace: monitoring
+  - kind: ServiceAccount        # Type of subject
+    name: prometheus            # ServiceAccount name
+    namespace: monitoring       # Namespace where ServiceAccount exists
