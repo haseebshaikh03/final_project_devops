@@ -29,12 +29,14 @@ This guide configures automatic Jenkins pipeline execution when you push code to
 2. Scroll to **GitHub** section
 3. Click **Add GitHub Server** → **GitHub Server**
 4. Configure:
-   - **Name**: `GitHub`
+   - **Name**: `    `
    - **API URL**: `https://api.github.com` (default)
    - **Credentials**: Add a GitHub Personal Access Token (see Step 2)
 5. Click **Test connection** to verify
 6. Click **Save**
 
+
+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
 ---
 
 ## 🔑 Step 2: Create GitHub Personal Access Token
