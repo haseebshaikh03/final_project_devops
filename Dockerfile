@@ -8,7 +8,7 @@ WORKDIR /usr/src/app
 COPY app/package*.json ./
 
 # Install all dependencies (including dev dependencies for build)
-RUN npm ci
+RUN npm install
 
 # Production stage
 FROM node:20-alpine
@@ -20,7 +20,7 @@ WORKDIR /usr/src/app
 COPY app/package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production && \
+RUN npm install --production && \
     npm cache clean --force
 
 # Copy application source
