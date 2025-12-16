@@ -8,6 +8,7 @@ This document maps each requirement from the Lab PDF to the implemented solution
 
 ## ✅ Core Requirements
 
+
 ### 1. Web Application with Database ✓
 
 **Requirement**: Create a web application that uses a database to store data.
