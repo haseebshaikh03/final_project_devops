@@ -22,6 +22,11 @@ pipeline {
         GIT_BRANCH      = 'main'
     }
 
+    triggers {
+        // Poll GitHub for changes every minute OR use GitHub webhook
+        githubPush()
+    }
+
     options {
         skipDefaultCheckout(true)
         buildDiscarder(logRotator(numToKeepStr: '10'))
